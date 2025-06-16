@@ -47,6 +47,9 @@ AI-Powered Voice Note Generator & Uploader with Amazon Q Support
     - Select use case as `Command Line Interface (CLI)
   - Download the credentials (csv) file (Access key ID + Secret access key)
 
+3. Create Amazon S3 bucket
+  - Bucket name: `s3-meeting-data-polly`
+
 ### Set up
 #### Visual Studio Code
 1. Create a virtual environment
@@ -55,7 +58,7 @@ AI-Powered Voice Note Generator & Uploader with Amazon Q Support
   - You may also create a folder: `mkdir aws-amazon-polly-s3` then `cd aws-amazon-polly-s3`
 4. Run `conda create -p venv python==3.10`
 - Explanation: -p venv: to create the environment in the venv directory; relative to my current working directory
-5. Activate this environment: Run `conda activate venv/` OR `conda activate /Users/mijikim/aws-amazon-polly-s3/venv`
+5. To activate this environment: Run `conda activate venv/` OR `conda activate /Users/mijikim/aws-amazon-polly-s3/venv`
 6. To deactivate an active environment, use `conda deactivate`
 7. Create a Requirements text file with the required libraries
 8. File > New Text File > enter boto3
@@ -65,3 +68,22 @@ AI-Powered Voice Note Generator & Uploader with Amazon Q Support
 9. Save as required_libraries.txt
 10. Install required libraries: run `pip install -r required_libraries.txt`
   - Explanation: -r is --requirement. It specifies that the argument following this is a requirements file containing a list of dependencies to install.
+11. Install AWS CLI (on macOS)
+  - (base) run `git -C /usr/local/Homebrew/Library/Taps/homebrew/homebrew-core fetch --unshallow`
+    - This converts a shallow clone into a full clone by downloading the entire Git history
+  - (base) run `brew install awscli`
+    -  Installs the AWS Command Line Interface (CLI) using Homebrew, the package manager for macOS (and Linux).
+    -  When running this prompt,
+      -  Homebrew downloads the AWS CLI package and its dependencies from the internet.
+      -  It builds or installs the binaries (usually precompiled).
+      -  It places the aws command into a directory like /usr/local/bin or /opt/homebrew/bin, which should be in your PATH.
+      -  You can then use aws from the terminal to interact with AWS services.
+  - test installation by running `aws --version`
+13. Configure Locally (VS Code / AWS CLI)
+  - In terminal in VS Code, activate venv environment: `conda activate /Users/mijikim/aws-amazon-polly-s3/venv`
+  - (venv) run `aws configure`
+  - It will ask for:
+  - AWS Access Key ID: enter the copied access key
+  - AWS Secret Access Key: copy it from AWS and paste it here
+  - Default region name: enter us-east-1
+  - Default output format: enter json
