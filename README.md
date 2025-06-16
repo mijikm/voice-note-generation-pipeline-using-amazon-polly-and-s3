@@ -10,6 +10,22 @@ AI-Powered Voice Note Generator & Uploader with Amazon Q Support
 (Optional: Transcribe it back using Amazon Transcribe)
 
 ### Prerequisites
+1. Install AWS Toolkit in VS Code
+  - Go to Extensions → Search: AWS Toolkit → Install
+  - Connect to your AWS account (ensure permissions for Polly + S3)
+    - *Note: the default region may need to be explicitly set in the config file. Run `nano ~/.aws/config` -> add profile
+    - ```
+      [profile PollyS3Users]
+      region = us-east-1
+      output = json
+      ```
+2. Install the Amazon Q Extension in VS Code
+  - In the AWS Toolkit panel, click on `Install the Amazon Q Extension`. ensure you're signed in and Amazon Q is active
+  - Sign in with your Builder ID
+  - You’ll see a sidebar panel where you can ask questions
+3. Install Python and Boto3
+
+### Prerequisites on AWS
 1. Create a User Group with Permissions
   - Go to IAM Console: https://console.aws.amazon.com/iam
   - Create a new user group: `PollyS3Users`
@@ -66,8 +82,13 @@ AI-Powered Voice Note Generator & Uploader with Amazon Q Support
   - Note: `awscli` is not included as I won't use AWS CLI commands inside my Python project and I'm just using the AWS CLI to configure credentials (aws configure) once locally.
   - `awscli` is AWS Command Line Interface, which is used to manage AWS services from the command line.
 9. Save as required_libraries.txt
-10. Install required libraries: run `pip install -r required_libraries.txt`
-  - Explanation: -r is --requirement. It specifies that the argument following this is a requirements file containing a list of dependencies to install.
+10. Install required libraries: run `python -m pip install boto3`
+  - What it does: Runs the pip module using the current Python interpreter (python). Installs the boto3 package into the site-packages directory of that specific Python environment.
+  - Why use python -m pip instead of just pip? It ensures that you use the pip associated with the exact python interpreter you want.
+  - This avoids problems where the pip command might point to a different Python environment (e.g., system Python vs virtualenv).
+  - Especially important if you have multiple Python versions or virtual environments.
+  - In summary: This command installs the AWS SDK for Python (boto3) into the Python environment that runs when you call python. Guarantees the package is installed where your Python script will run.
+
 11. Install AWS CLI (on macOS)
   - (base) run `git -C /usr/local/Homebrew/Library/Taps/homebrew/homebrew-core fetch --unshallow`
     - This converts a shallow clone into a full clone by downloading the entire Git history
@@ -87,3 +108,40 @@ AI-Powered Voice Note Generator & Uploader with Amazon Q Support
   - AWS Secret Access Key: copy it from AWS and paste it here
   - Default region name: enter us-east-1
   - Default output format: enter json
+
+14. Test connection
+  - Run `python polly_s3_script.py`
+    ```
+    import boto3
+    import botocore.exceptions
+    
+    # Creates a client for Amazon Polly
+    polly = boto3.client("polly")
+    # Test the connection by synthesizing speech
+    ''' Calls synthesize_speech():
+    Text: "Test" — the text to convert to speech.
+    OutputFormat: "mp3" — the audio file format.
+    VoiceId: "Joanna" — one of the standard English (US) voices.
+    '''
+    try:
+        response = polly.synthesize_speech(Text="Test", OutputFormat="mp3", VoiceId="Joanna")
+        print("Polly access successful.")
+    except botocore.exceptions.ClientError as e:
+        print("Polly access failed:", e.response["Error"]["Message"])
+    
+    # Creates a client for Amazon S3
+    s3 = boto3.client("s3")
+    # Uploads a text file (test.txt) with content "Hello" to the bucket your-bucket-name. Prints a message if the upload succeeds.
+    try:
+        s3.put_object(Bucket="s3-meeting-data-polly", Key="test.txt", Body="Hello")
+        print("S3 access successful.")
+    except botocore.exceptions.ClientError as e:
+        print("S3 access failed:", e.response["Error"]["Message"])
+    ```
+
+### Implementation
+1. Run code to convert text to speech with Polly and upload generated mp3 file to S3
+  - `python polly_s3_script.py` 
+3. Verify the outcome
+  - `aws s3 ls --profile PollyS3Users`: To list all S3 buckets
+  - `aws s3 ls s3://s3-meeting-data-polly/meeting_audio/ --profile PollyS3Users`: To list everything in the specified S3 bucket folder 
