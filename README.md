@@ -4,7 +4,7 @@
 AI-Powered Voice Note Generator & Uploader with Amazon Q Support
 
 ### Project Overview
-1. Generate a meeting script using Amazon Q
+1. Generate a meeting script using Amazon Bedrock assisted by Amazon Q (Claude Sonnet 4)
 2. Convert it to speech using Amazon Polly
 3. Upload the audio to S3 using Boto3
 (Optional: Transcribe it back using Amazon Transcribe)
@@ -29,7 +29,8 @@ AI-Powered Voice Note Generator & Uploader with Amazon Q Support
 1. Create a User Group with Permissions
   - Go to IAM Console: https://console.aws.amazon.com/iam
   - Create a new user group: `PollyS3Users`
-  - Attach these managed policies:
+  - Attach these managed policies to the User Group:
+    - AmazonBedrockFullAccess - for Amazon Bedrock
     - `AmazonPollyFullAccess` – for Polly
     - `AmazonS3FullAccess` – or create a scoped S3 policy for least privilege
       - ```{
@@ -140,8 +141,109 @@ AI-Powered Voice Note Generator & Uploader with Amazon Q Support
     ```
 
 ### Implementation
-1. Run code to convert text to speech with Polly and upload generated mp3 file to S3
-  - `python polly_s3_script.py` 
+1. Run code to generate meeting script with Amazon Bedrock, convert it to speech with Polly and upload the generated mp3 file to S3
+  - `python bedrock_polly_meeting_transcript.py` 
 3. Verify the outcome
   - `aws s3 ls --profile PollyS3Users`: To list all S3 buckets
-  - `aws s3 ls s3://s3-meeting-data-polly/meeting_audio/ --profile PollyS3Users`: To list everything in the specified S3 bucket folder 
+  - `aws s3 ls s3://s3-meeting-data-polly/meeting_audio/ --profile PollyS3Users`: To list everything in the specified S3 bucket folder
+
+# Enhancement 1 - Trigger with Lambda
+1. Generate scripts using Amazon Q to use Lambda
+  - `lambda_function.py`: this is your main Lambda function that processes meeting transcripts. Here's what it does:
+    - **Core Functions**:
+      - generate_meeting_transcript() - Returns a hardcoded meeting transcript (we removed the Bedrock call to avoid permission issues)
+      - text_to_speech() - Takes the transcript text and uses Amazon Polly to convert it into an MP3 audio file
+      - upload_to_s3_direct() - Uploads the audio data directly to S3 without saving to local files (since Lambda has limited local storage)
+    - **Main Handler**:
+      - lambda_handler() - This is the entry point that AWS Lambda calls when triggered
+      - It accepts parameters like bucket name, output file path, and voice ID
+      - Runs the 3-step process: generate transcript → convert to speech → upload to S3
+      - Returns JSON responses with success/error status codes
+    - Key Lambda Adaptations:
+      - No local file operations (everything stays in memory)
+      - Proper error handling with HTTP status codes
+      - Configurable via event parameters
+  - `deploy_lambda_simple.py`: This is your deployment automation script. Here's what it does:
+    - **Two Main Functions**:
+      - create_lambda_package() - Zips up your lambda_function.py file into a deployment package that AWS can use
+      - deploy_lambda_function() - Uploads the package to AWS and either creates a new Lambda function or updates an existing one
+2. Add Lambda permissions to your user
+  - Via AWS Console: Go to IAM → Users → polly-s3-user
+  - Click "Add permissions" → "Attach policies directly"
+  - Search for "AWSLambda_FullAccess"
+  - Attach it
+3. Create the IAM role manually via AWS Console
+  - Go to IAM Console → Roles → Create role
+    - *Note: This allow an AWS service like EC2 or **Lambda**, or others to perform actions in this account.
+  - Select AWS service → Lambda
+  - Attach these policies: `AWSLambdaBasicExecutionRole`, `AmazonPollyFullAccess`, `AmazonS3FullAccess`, `AmazonBedrockFullAccess`,
+  - Name it `lambda-execution-role`
+4. If you run `python deploy_lambda_simple.py`, it will create a Lambda function `meeting-transcript-processor-v2` under your user.
+5. Add an API Gateway Trigger
+  - Go to AWS Lambda Console → Select your Lambda function.
+  - On the left panel, click “Configuration”, not Code.
+  - Under “Triggers”, click “Add trigger”.
+  - Select “API Gateway” from the list.
+  - For API type, select HTTP API (Recommended) or REST API if you need advanced features.
+  - Select “Create a new API”, or attach to an existing one.
+  - Leave security as Open for testing (you can add authentication later).
+  - Click “Add”. After a few seconds, you’ll see an API endpoint URL in the trigger list.
+6. Test via Postman (https://web.postman.co/)
+  - Open Postman.
+  - Set method to POST.
+  - Paste your API Gateway URL in the address bar.
+7. (Optional) Amazon EventBridge Scheduler - to create schedule to invoke lambda function
+
+# Enhancement 2 - Store Data in Dynamo DB
+What is Dynamo DB? Amazon DynamoDB is a fully managed NoSQL database service from AWS.
+  - Serverless: No need to manage servers, storage, or scaling.
+  - Fast: Single-digit millisecond response times.
+  - Scalable: Automatically handles workloads from small projects to enterprise-scale systems.
+  - Key-value or document store: You store items like JSON objects.
+
+Why not S3? S3 is good for static file storage. it is hard to query for individual meetings and there is no structured metadata.
+Why not RDS (Relational DB)? it's usually good for complex queries, joins. It is an overkill for simple meeting data, needs server management.
+
+Why use Dynamo DB? it's good for simple key-value storage. IT is perfect for JSON-like meeting data, serverless, and quick set up. T store your meeting scripts, summaries, and audio URLs permanently.	Q can search DynamoDB as a data source (or you can build APIs on top).DynamoDB is like a JSON storage where each row is a meeting, and you can easily look it up later — but it’s built for fast, scalable cloud applications.
+ 
+Example:
+| meeting\_id | topic     | transcript       | summary                              | audio\_file\_url               | timestamp         |
+| ----------- | --------- | ---------------- | ------------------------------------ | ------------------------------ | ----------------- |
+| abc123      | Team Sync | "Hello, team..." | "Discussed sales. Action: Bob to..." | s3://bucket/meeting\_audio.mp3 | 2025-07-05T10:00Z |
+
+✅ Step 1: Go to DynamoDB Console
+1. Log in to the AWS Console.
+2. Search for and open “DynamoDB”.
+3. Click “Create table”.
+
+✅ Step 2: Configure the Table
+| Field             | What to Enter                    |
+| ----------------- | -------------------------------- |
+| **Table name**    | `MeetingRecords`                 |
+| **Partition key** | `meeting_id`                     |
+| Type              | `String`                         |
+| Sort key          | Leave empty (not needed for now) |
+
+Leave everything else as default:
+  - Table class: Standard
+  - Capacity mode: On-demand
+  - Encryption: Default AWS owned key
+
+Click “Create table”.
+
+✅ Step 3: Wait for the Table to Be Active
+It will take a few seconds. You'll see the status as "Active" when ready.
+
+✅ Step 4: (Optional for Now) Explore the Table
+Go to “Explore table items”.
+
+You'll see an empty table — you’ll insert data from Lambda next.
+
+✅ Step 5: (Prepare for Lambda) — Table Summary
+Table Name	Partition Key	Type
+MeetingRecords	meeting_id	String
+
+✅ Step 6: Modify lambda_function.py to save data into DynamoDB
+With the help of Amazon Q, lambda_function.py was modified to create dynamodb service client,  assign a topic, generate unique meeting ID, timestamp, and summary
+
+    
