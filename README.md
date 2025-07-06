@@ -9,6 +9,20 @@ AI-Powered Voice Note Generator & Uploader with Amazon Q Support
 3. Upload the audio to S3 using Boto3
 (Optional: Transcribe it back using Amazon Transcribe)
 
+
+### The Complete Flow:
+1. You trigger: meeting-transcript-processor-v2 by running `python test_lambda.py`
+2. Lambda processes: Generate transcript → Convert to audio → Save to DynamoDB
+3. DynamoDB streams automatically trigger: dynamodb-stream-sync
+4. Stream Lambda creates: S3 document for Q Business indexing
+   
+*Visual FLow: Manual Trigger → meeting-transcript-processor-v2 → DynamoDB → Stream (automatic) → dynamodb-stream-sync → S3
+
+What You'll See:
+1. DynamoDB: Meeting record saved
+2. S3: Audio file + text document (for Q Business)
+3. No manual intervention needed for the S3 sync
+
 ### Prerequisites
 1. Install AWS Toolkit in VS Code
   - Go to Extensions → Search: AWS Toolkit → Install
@@ -246,4 +260,128 @@ MeetingRecords	meeting_id	String
 ✅ Step 6: Modify lambda_function.py to save data into DynamoDB
 With the help of Amazon Q, lambda_function.py was modified to create dynamodb service client,  assign a topic, generate unique meeting ID, timestamp, and summary
 
+✅ Step 7: Add DynamoDB permissions to your Lambda role first, then deploy
+Go to IAM Console → Roles → `lambda-execution-role`
+Add Permission → Attach this policy: AmazonDynamoDBFullAccess
+
+✅ Step 8: Run the following to deploy (uploads the code to AWS)
+`python deploy_lambda_simple.py`
+
+✅ Step 9: Run the following to trigger the Lambda
+`python test_lambda.py`
+
+✅ Step 10: Verify data is stored in DynamoDB table 
+DynamoDB → Explore items → MeetingRecords
+
+# Enhancement 3 - Build a conversational app with Amazon Q Apps
+✅ STEP 1: Create an Organization to enable IAM Identity Center (prerequisite for creating Q App)
+1. Go to the AWS Console → search for “Organizations”
+2. If prompted, click “Create an organization”.
+3. Choose “Create organization” → “Enable all features”.
+4. Wait 1–2 minutes for setup to complete.
+✔️ If your account is already part of an Organization, you’ll see it listed.
+
+✅ STEP 2: Enable IAM Identity Center
+1. Open the IAM Identity Center Console
+- In AWS Console, search for “IAM Identity Center”.
+- Click on it.
+- If you see “Enable IAM Identity Center”, Click `Enable` button:
+  - It will show current AWS region. e.g. `Current AWS Region: US East (N. Virginia)`
+- Leave the defaults for the Identity source as “Identity Center directory” (no external provider needed now).
+- Click “Enable”.
+- Wait ~30 seconds for it to initialize.
+- Once enabled, you’ll land on the IAM Identity Center dashboard, where you’ll see:
+“Users”
+“Groups”
+“Applications”
+2. Create User
+- Username: meeting.analyst
+- Password: Send an email to this user with password setup instructions.
+- Email address
+- Confirm email address
+- First name: Meeting
+- Last name: Analyst
+- Display name: Meeting Analyst
+- (Note*: Set up the authenticator app when prompted)
+  
+3. Create Group
+- Name: MeetingAnalysisTeam
+- Description: Users who can access meeting transcripts and analysis via Q Business.
+- Add `meeting.analyst` to the group
+- Create group
+✔️ You don’t need to create users/groups now for testing Q Apps with “No access control”.
+  
+✅ STEP 3: Create an Amazon Q App
+1. Go to Amazon Q Apps Console → Amazon Q Business → Applications → Create application
+  - Application name: `QBusinessMeetingSummaryApp`
+  - User access: `Authenticated Access`
+  - Outcome: `Web Experience`
+  - Access management method: `AWS IAM Identity Center`
+    - You will see `Application connected to IAM Identity Center`
+  - Click `Create`
+
+🔍 What Did You Just Set Up?
+| What                  | Why                                               |
+| --------------------- | ------------------------------------------------- |
+| AWS Organization      | Required for centralized identity management      |
+| IAM Identity Center   | Required for all Amazon Q Business apps           |
+| Basic identity source | Even for apps without fine-grained access control |
+
+✅ STEP 4: Set up an Amazon Q App - create an index
+1. Amazon Q Business → Applications → QBusinessMeetingSummaryApp → Data sources → Create an index
+- Index name: `meeting-index`
+- Index provisioning: `Starter` (*Note: The Starter Index is deployed in a single Availability Zone, making it ideal for PoCs and developer workloads.)
+- Number of units: `1`
+- Click `Add an index`
+2. Once an index has been created, Add data source
+- DynamoDB isn't directly available as a data source in Q Business, but S3 is.
+- DynamoDB Streams will be implemented to
+  - Keep DynamoDB for structured queries
+  - Auto-sync to S3 for Q Business indexing
+  - No manual redundancy management
+
+✅ STEP 5: Set up an Amazon Q App - sync DynamoDB to S3
+1. Enable DynamoDB Streams: run `python enable_dynamodb_streams.py` (this is a one-time setup)
+  - *Note: Before running this, you need to add DynamoDB Admin Permissions (`AmazonDynamoDBFullAccess`) to user group `PollyS3Users`)
+  - *Note: To disable via AWS Console
+    - Disable Event Source Mapping:
+    - 1. Lambda Console → Functions → dynamodb-stream-sync
+    - 2. Configuration → Triggers
+    - 3. Delete the DynamoDB trigger
+    - Disable Streams:
+    - 1. DynamoDB Console → Tables → MeetingRecords
+    - 2. Exports and streams → DynamoDB stream details
+    - 3. Disable stream
+
+2. Deploy Stream Handler: run `python deploy_stream_lambda.py` (this will create a new Lambda function - `dynamodb-stream-sync`
+  - Triggered by DynamoDB streams, Syncs data from DynamoDB to S3, creates documents for Q Business
+  - *Note: You need to enter the DynamoDB Stream ARN which can be found: DynamoDB Tables → MeetingRecords → Exports and streams tab → Under DynamoDB stream details, you'll see `Latest Stream ARN`
     
+3. Deploy Updated Main Lambda: run `python deploy_lambda_simple.py`
+  - as the code inside `lambda_function.py` changed (it used to save document to S3, but it is now removed)
+   
+4. Trigger the lambda: run `python test_lambda.py`
+  - You can now see a new text file created in `meeting_documents/` S3 folder in `s3-meeting-data-polly` bucket.
+
+✅ STEP 6: Set up an Amazon Q App - add S3 as data source
+1. Amazon Q Business → Applications → QBusinessMeetingSummaryApp → Data sources → Add data source → S3
+2. Data source name: `meeting-documents`
+3. Enter the data source location: `s3://s3-meeting-data-polly`
+4. Filter patterns - optional: Include prefix pattern: `meeting_documents/`
+5. File types: Select Text files (.txt)
+6. IAM role: `Create a new service role (Recommended), Role name: `QBusiness-DataSource-ekucs`
+  - *Note: Q Business will need permissions to read your S3 bucket. Q Business will automatically:
+  - Create the IAM role with correct permissions
+    - Set up trust relationship with qbusiness.amazonaws.com
+    - Grant S3 read access to your bucket
+    - Handle all the IAM complexity for you
+7. Sync mode: select `Full sync` initially
+8. Sync run schedule - Frequency: `Run on demand`
+9. Click Add data source
+✔️ Once added, click on  `Sync now`
+
+✅ STEP 7: Assign groups for Q Business App
+- Amazon Q Business → Applications → QBusinessMeetingSummaryApp → Manage user access → Add groups and user → Add `MeetingAnalaysisTeam` group as Q Business Lite.
+
+✅ STEP 8: Test Q Business App
+- Amazon Q Business → Applications → QBusinessMeetingSummaryApp → Web experience settings → Click on `Deployed URL` -> Sign in with `meeting.analyst`
