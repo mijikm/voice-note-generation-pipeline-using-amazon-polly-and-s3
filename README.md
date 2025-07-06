@@ -4,24 +4,40 @@
 AI-Powered Voice Note Generator & Uploader with Amazon Q Support
 
 ### Project Overview
-1. Generate a meeting script using Amazon Bedrock assisted by Amazon Q (Claude Sonnet 4)
+1. Generate a meeting script using Amazon Bedrock assisted by Amazon Q (Claude Sonnet 3)
 2. Convert it to speech using Amazon Polly
 3. Upload the audio to S3 using Boto3
 (Optional: Transcribe it back using Amazon Transcribe)
 
 
 ### The Complete Flow:
-1. You trigger: meeting-transcript-processor-v2 by running `python test_lambda.py`
-2. Lambda processes: Generate transcript → Convert to audio → Save to DynamoDB
-3. DynamoDB streams automatically trigger: dynamodb-stream-sync
-4. Stream Lambda creates: S3 document for Q Business indexing
+1. Run `python test_lambda.py`
+2. This triggers a Lambda function: `meeting-transcript-processor-v2`
+3. This Main Lambda function processes the following:
+   1) **Bedrock**: Bedrock generates a transcript
+   2) **Polly**: Polly converts the transcript to MP3 audio file
+   3) **S3**: The audio file (.mp3) is loaded to S3
+   4) **DynamoDB**: The meeting data is saved to a DynamoDB table
+      - Meta data: `meeting_id`, `topic`, `transcript`, `summary`, `audio_file__url`, `timestamp`
+4. DynamoDB streams automatically trigger a Lambda function: `dynamodb-stream-sync`
+5. This Stream Lambda function does the following:
+   1) It reads DybamoDB change
+   2) It converts DynamoDB format to a regular dictionary data
+   3) It creates a text document and uploads it to S3 for Q Business
+6. Amazon Q Business does the following:
+   1) It scans S3, locates the text file, indexes the file (organising doc into searchable index (e.g. topics, keywords, content chunks))
+   2) It makes content searchable
+   3) It answers user questions
+8. Users query data with Q Business
+   - e.g. User: What was discussed in recent meetings?"
    
-*Visual FLow: Manual Trigger → meeting-transcript-processor-v2 → DynamoDB → Stream (automatic) → dynamodb-stream-sync → S3
+*Visual FLow: Manual Trigger → Main lambda (meeting-transcript-processor-v2) → (DynamoDB Stream (automatic)) → Stream Lambda (dynamodb-stream-sync) → (Automatic Indexing) → Amazon Q Business
 
-What You'll See:
-1. DynamoDB: Meeting record saved
-2. S3: Audio file + text document (for Q Business)
-3. No manual intervention needed for the S3 sync
+What Gets Created Per Meeting:
+1. DynamoDB Record: Structured data
+2. S3 Audio File: `meeting_audio/{uuid}.mp3`
+3. S3 Text Document: `meeting_documents/{uuid}.txt` (for Q Business)
+4. Q Business Index: searchable meeting content
 
 ### Prerequisites
 1. Install AWS Toolkit in VS Code
