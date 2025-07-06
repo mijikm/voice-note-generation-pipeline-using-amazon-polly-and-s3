@@ -33,7 +33,9 @@ AI-Powered Voice Note Generator & Uploader with Amazon Q Support
    
 *Visual FLow: Manual Trigger → Main lambda (meeting-transcript-processor-v2) → (DynamoDB Stream (automatic)) → Stream Lambda (dynamodb-stream-sync) → (Automatic Indexing) → Amazon Q Business
 
-What Gets Created Per Meeting:
+![image](https://github.com/user-attachments/assets/460a88e3-1fc2-4a3c-947f-cd2c01fc96d1)
+
+**What Gets Created Per Meeting:**
 1. DynamoDB Record: Structured data
 2. S3 Audio File: `meeting_audio/{uuid}.mp3`
 3. S3 Text Document: `meeting_documents/{uuid}.txt` (for Q Business)
