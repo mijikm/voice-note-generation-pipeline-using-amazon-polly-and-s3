@@ -81,6 +81,8 @@ What You'll See:
 3. Create Amazon S3 bucket
   - Bucket name: `s3-meeting-data-polly`
 
+4. Enable Bedrock Model Access
+  - Amazon Bedrock Console → Model access (left sidebar) → Click "Enable specific models" or "Manage model access" → Enable Anthropic `Claude 3 Sonnet` → Submit the request
 ### Set up
 #### Visual Studio Code
 1. Create a virtual environment
